@@ -133,21 +133,16 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
     c_unobs_pred_all = []
     for i in range(n_data):
         c_unobs_true = c_true_dn[i][na_index_dn[i]]
-        if len(na_index_dn[i]) > 0:
+        if sum(na_index_dn[i]) > 0:
             na_index_i = ix_(na_index_dn[i])[0]
             c_unobs_pred_mat = sample_c_dn[i][:,na_index_i]
             c_unobs_pred_prob = apply_along_axis(lambda x: sum(x==1)/len(x), 0, c_unobs_pred_mat)
-            # need to convert this to 0/1 based on prob > 0.5
             c_unobs_pred = where(c_unobs_pred_prob > 0.5, 1, 0)
             acc[i] = get_acc(c_unobs_true, c_unobs_pred)
             fpr[i] = get_fpr(c_unobs_true, c_unobs_pred)
             fnr[i] = get_fnr(c_unobs_true, c_unobs_pred)
             c_unobs_pred_all.append(c_unobs_pred)
 
-
-
-
-
-    results = {"lambda": lambda_hat, "pred": c_unobs_true_dn, "bias": bias,
+    results = {"sample_lambdas": sample_lambdas, "pred": c_unobs_pred_all, "bias": bias,
                "variance": variance, "acc": acc, "fpr": fpr, "fnr": fnr}
     return results

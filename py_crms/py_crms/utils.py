@@ -8,11 +8,14 @@ that are also useful for external consumption.
 """
 
 #from math import exp
-from numpy import nan
+from numpy import nan, ndarray
 
 def get_bias(estimate, truth):
     """Calculate the estimated bias."""
-    bias = [x - y for x, y in zip(estimate, truth)]
+    try:
+        bias = estimate.mean(axis=0) - truth
+    except AttributeError:
+        bias = [x - y for x, y in zip(estimate, truth)]
     return bias
 
 def get_acc(unobs_true, unobs_pred):
@@ -28,7 +31,7 @@ def get_acc(unobs_true, unobs_pred):
 def get_fpr(unobs_true, unobs_pred):
     """False positive rate of individual-level classification"""
     n_unobs = len(unobs_true)
-    if n_unobs == 0:
+    if n_unobs == 0 or sum(unobs_true == 0) == 0:
         return nan
     else:
         fpr = sum((unobs_true == 0) & (unobs_pred == 1)) / sum(unobs_true == 0)
@@ -37,7 +40,7 @@ def get_fpr(unobs_true, unobs_pred):
 def get_fnr(unobs_true, unobs_pred):
     """False negative rate of individual-level classification"""
     n_unobs = len(unobs_true)
-    if n_unobs == 0:
+    if n_unobs == 0 or sum(unobs_true == 1) == 0:
         return nan
     else:
         fnr = sum((unobs_true == 1) & (unobs_pred == 0)) / sum(unobs_true == 1)
