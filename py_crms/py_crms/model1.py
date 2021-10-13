@@ -5,8 +5,9 @@ py_crms.model1
 ~~~~~~~~~~~~~~
 This module supplies the function to fit model 1.
 """
-from numpy import empty, nan, ix_, apply_along_axis, where
+from numpy import empty, nan, ix_, apply_along_axis, where, prod
 from numpy.random import beta, binomial
+from pandas import Series
 from py_crms.utils import get_bias, get_fnr, get_fpr, get_acc
 
 
@@ -27,9 +28,14 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
     :param lambda_true: true prevalence
     :return: dict
     """
+    np_beta = beta
+    np_binom = binomial
+    np_prod = prod
     d = data["D"].copy()
     d_values = data["D"].unique()
     c = data["C"].copy()
+    n_total = c.shape[0]
+    c_isna = c.isna()
     if true_covid_name in list(data):
         c_true = data[str(true_covid_name)]
     else:
@@ -40,7 +46,9 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
     c_true_dn = []
     c_dn = []
     x_dn = []
+    d_group = Series([0] * n_total, dtype=int)
     for i in range(n_data):
+        d_group[d == d_values[i]] = i
         d_val_index = d == d_values[i]
         if c_true is not None:
             c_true_dn.append(c_true[d_val_index])
@@ -51,6 +59,7 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
         na_index_dn.append(c_dn[i].isna())
     q = x.shape[1]
 
+    c_pred = data["C"].copy()
     a_lambda = 1
     b_lambda = 5
     a_phi = b_phi = 1
@@ -65,26 +74,25 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
         sample_c_dn.append(
             empty(shape=(n_samples, len(c_dn[i])))
         )
-
     for i in range(n_iter):
         for j in range(n_data):
             # sample c_i
-            if len(na_index_dn[j]) > 0:
-                for k in na_index_dn[j][na_index_dn[j]].index:
-                    term1 = lambdas[j] * \
-                            (phi_1[j]**x_dn[j].loc[k]).product() * \
-                            ((1 - phi_1[j])**(1 - x_dn[j].loc[k])).product()
-                    term2 = (1 - lambdas[j]) * \
-                            (phi_0[j]**x_dn[j].loc[k]).product() * \
-                            ((1 - phi_0[j])**(1 - x_dn[j].loc[k])).product()
-                    prob = term1 / (term1 + term2)
-                    c_dn[j].loc[k] = binomial(n=1, p=prob)
+            if sum(na_index_dn[j]) > 0:
+                x_array = x_dn[j].to_numpy()
+                na_index_array = na_index_dn[j].to_numpy()
+                x_array_na = x_array[na_index_array]
+                term1 = lambdas[j] * np_prod(phi_1[j]**x_array_na, axis=1) * \
+                        np_prod((1 - phi_1[j])**(1 - x_array_na), axis=1)
+                term2 = (1 - lambdas[j]) * np_prod(phi_0[j]**x_array_na, axis=1) * \
+                        np_prod((1 - phi_0[j])**(1 - x_array_na), axis=1)
+                prob = term1 / (term1 + term2)
+                c_dn[j][na_index_array] = np_binom(n=1, p=prob)
             # sample lambdas
             sample_a_lambda = a_lambda + c_dn[j].sum()
             sample_b_lambda = b_lambda + (1 - c_dn[j]).sum()
-            lambdas[j] = beta(a=sample_a_lambda,
-                              b=sample_b_lambda,
-                              size=1)
+            lambdas[j] = np_beta(a=sample_a_lambda,
+                                 b=sample_b_lambda,
+                                 size=1)
             # store
             if i >= burn_in:
                 sample_lambdas[i - burn_in, j] = lambdas[j]
@@ -104,10 +112,10 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
                 if not pooled:
                     a0_updated = a_phi + c_0_x_1
                     b0_updated = b_phi + c_0_x_0
-                    phi_0[j, l] = beta(a=a0_updated, b=b0_updated, size=1)
+                    phi_0[j, l] = np_beta(a=a0_updated, b=b0_updated, size=1)
                     a1_updated = a_phi + c_1_x_1
                     b1_updated = b_phi + c_1_x_0
-                    phi_1[j, l] = beta(a=a1_updated, b=b1_updated, size=1)
+                    phi_1[j, l] = np_beta(a=a1_updated, b=b1_updated, size=1)
                 else:
                     c_1_x_1_sum += c_1_x_1
                     c_1_x_0_sum += c_1_x_0
@@ -117,10 +125,10 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
             if pooled:
                 a0_updated = a_phi + c_0_x_1_sum
                 b0_updated = b_phi + c_0_x_0_sum
-                phi_0[0:(n_data + 1), l] = beta(a=a0_updated, b=b0_updated, size=1)
+                phi_0[0:(n_data + 1), l] = np_beta(a=a0_updated, b=b0_updated, size=1)
                 a1_updated = a_phi + c_1_x_1_sum
                 b1_updated = b_phi + c_1_x_0_sum
-                phi_1[0:(n_data + 1), l] = beta(a=a1_updated, b=b1_updated, size=1)
+                phi_1[0:(n_data + 1), l] = np_beta(a=a1_updated, b=b1_updated, size=1)
     # bias and variance of estimated lambda
     bias = get_bias(sample_lambdas, lambda_true)
     variance = sample_lambdas.var(axis=0)
@@ -135,7 +143,7 @@ def fit_model_1(data, true_covid_name=None, n_data=1, n_iter=500, burn_in=100,
         c_unobs_true = c_true_dn[i][na_index_dn[i]]
         if sum(na_index_dn[i]) > 0:
             na_index_i = ix_(na_index_dn[i])[0]
-            c_unobs_pred_mat = sample_c_dn[i][:,na_index_i]
+            c_unobs_pred_mat = sample_c_dn[i][:, na_index_i]
             c_unobs_pred_prob = apply_along_axis(lambda x: sum(x==1)/len(x), 0, c_unobs_pred_mat)
             c_unobs_pred = where(c_unobs_pred_prob > 0.5, 1, 0)
             acc[i] = get_acc(c_unobs_true, c_unobs_pred)

@@ -7,19 +7,9 @@ This module supplies the function to fit model 0.
 """
 from numpy import nan, where
 from pandas import get_dummies
-from sklearn.linear_model import LogisticRegression as logit
+import statsmodels.api as sm
 import xgboost as xgb
 from py_crms.utils import get_bias, get_fnr, get_fpr, get_acc
-
-# for testing...
-# from pandas import read_csv
-# data_raw = read_csv("sim_model_1_data_data.csv")
-# data_raw.columns
-# data = data_raw.filter(regex="^[^W]")
-# data = data_raw.copy()
-# c_true_df = read_csv("c_true.csv")
-# c_true = c_true_df.x
-# n_data = 2
 
 
 def fit_model_0(data, classifier="LR", true_covid_name=None, lambda_true=None, n_data=1):
@@ -34,7 +24,6 @@ def fit_model_0(data, classifier="LR", true_covid_name=None, lambda_true=None, n
     :return: dict
     """
     d = data["D"].copy()
-    c = data["C"].copy()
     if true_covid_name in list(data):
         c_true = data[str(true_covid_name)]
     else:
@@ -51,16 +40,14 @@ def fit_model_0(data, classifier="LR", true_covid_name=None, lambda_true=None, n
         data_na_index_dn = data[na_index & (data["D"] == d_values[i])]
         na_index_dn.append(data_na_index_dn.index)
     sample_obs = sample[na_index.eq(False)].copy()
-    sample_unobs = sample[na_index].copy()
-    n_unobs = sample_unobs.shape[0]
     y_fit = sample_obs["C"]
     x_fit = sample_obs.filter(regex="[^C]")
     x_predict = sample.filter(regex="[^C]")
 
     if classifier is "LR":
-        model = logit(penalty="none", solver="newton-cg")
-        model.fit(x_fit, y_fit)
-        predict_full = model.predict_proba(x_predict)[:, 1]
+        model = sm.GLM(y_fit, x_fit, family=sm.families.Binomial())
+        results = model.fit(maxiter=25)
+        predict_full = results.predict(x_predict)
     else:
         dtrain = xgb.DMatrix(x_fit, label=y_fit, missing=nan)
         param = {"objective": "binary:logistic",
@@ -97,6 +84,6 @@ def fit_model_0(data, classifier="LR", true_covid_name=None, lambda_true=None, n
             fpr[i] = get_fpr(c_unobs_true_dn[i], c_unobs_pred_dn[i])
             fnr[i] = get_fnr(c_unobs_true_dn[i], c_unobs_pred_dn[i])
 
-    results = {"lambda": lambda_hat, "pred": c_unobs_true_dn, "bias": bias,
+    results = {"lambda": lambda_hat, "pred": c_unobs_pred_dn, "bias": bias,
                "variance": variance, "acc": acc, "fpr": fpr, "fnr": fnr}
     return results
