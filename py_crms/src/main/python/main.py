@@ -175,23 +175,7 @@ class MainWindow(QWidget):
                 results_p025 = round(results_ci95.iloc[0], 3)[0]
                 results_p975 = round(results_ci95.iloc[1], 3)[0]
                 self.label_model_output.setText(f'Predicted prevalence (95% CI): {results_mean} '
-                                                f'({results_p025}, {results_p975})')
-
-    def show_plots(self):  # disable until results are ready
-        if not self.data_loaded:
-            alert = QMessageBox()
-            alert.setText('No data loaded. Please click "Load data (.csv)" button to select data file.')
-            alert.exec()
-        else:
-            pass
-
-    def download_plots(self):
-        if not self.data_loaded:
-            alert = QMessageBox()
-            alert.setText('No data loaded. Please click "Load data (.csv)" button to select data file.')
-            alert.exec()
-        else:
-            pass
+                                                f'({results_p025} - {results_p975})')
 
     def download_results(self):
         if (not self.test_data_loaded) or (not self.train_data_loaded):
@@ -208,7 +192,10 @@ class MainWindow(QWidget):
             results_file_name = f'results_model_{model_int}.csv'
             path = QFileDialog.getSaveFileName(self, 'Save results (csv)', results_file_name, 'CSV Files (*.csv)')
             if path != ('', ''):
-                self.model_results['predictions'].to_csv(path[0], index=False)
+                os.remove(path[0])
+                with open(path[0], 'a') as f:
+                    f.write(self.label_model_output.text() + '\n')
+                    self.model_results['predictions'].to_csv(f, index=False)
                 if os.path.isfile(path[0]):
                     alert = QMessageBox()
                     alert.setText('results saved to' + path[0])

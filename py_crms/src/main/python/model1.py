@@ -5,7 +5,7 @@ py_crms.model1
 ~~~~~~~~~~~~~~
 This module supplies the function to fit model 1.
 """
-from numpy import empty, nan, nan_to_num, ix_, apply_along_axis, where, prod
+from numpy import empty, nan, nan_to_num, ix_, apply_along_axis, where, prod, quantile
 from numpy.random import beta, binomial
 from pandas import Series, DataFrame, concat
 from PyQt5.QtWidgets import QApplication
@@ -41,8 +41,6 @@ def fit_model_1(train_data, test_data, id_column_name, covid_column_name,
     c_isna = c.isna()
 
     x = data.drop(columns=[id_column_name, covid_column_name, 'train'])
-    #na_index_dn = []
-    #na_index_dn.append(c_dn[i].isna()) --> this is now just c_isna
     q = x.shape[1]
 
     a_lambda = 1
@@ -55,6 +53,7 @@ def fit_model_1(train_data, test_data, id_column_name, covid_column_name,
     n_samples = n_iter - burn_in
     sample_lambdas = empty(shape=(n_samples, 1))
     sample_c = empty(shape=(n_samples, len(c)))
+    sample_prob_c = empty(shape=(n_samples, sum(c_isna)))
     
     for i in range(n_iter):
         # sample c_i
@@ -77,7 +76,8 @@ def fit_model_1(train_data, test_data, id_column_name, covid_column_name,
         # store
         if i >= burn_in:
             sample_lambdas[i - burn_in] = lambdas
-            sample_c[i - burn_in,] = c
+            sample_c[i - burn_in, ] = c
+            sample_prob_c[i - burn_in, ] = prob
         # sample phi
         for l in range(q):
             c_1_x_1_sum = 0
@@ -118,14 +118,19 @@ def fit_model_1(train_data, test_data, id_column_name, covid_column_name,
         c_unobs_pred_mat = sample_c[:, na_index]
         c_unobs_pred_prob = apply_along_axis(lambda x: sum(x == 1)/len(x), 0, c_unobs_pred_mat)
         c_unobs_pred = where(c_unobs_pred_prob > 0.5, 1, 0)
-    prevalence = DataFrame(sample_lambdas, columns=["prevalence"])
+    prevalence = DataFrame(sample_lambdas, columns=['prevalence'])
     index_covid_missing = data.loc[c_isna].index
     id_covid_missing = data.loc[c_isna, 'ID']
     df_predictions = Series(c_unobs_pred,
-                            name="prediction",
+                            name='prediction',
                             index=index_covid_missing)
-    predictions = concat([id_covid_missing, df_predictions], axis=1)
-    results = {"prevalence": prevalence, "predictions": predictions}
+    sample_prob_q025 = quantile(sample_prob_c, .025, axis=0).round(4)
+    sample_prob_q975 = quantile(sample_prob_c, .975, axis=0).round(4)
+    sample_prob_qtiles = DataFrame({'ci95_low': sample_prob_q025,
+                                    'ci95_high': sample_prob_q975},
+                                   index=index_covid_missing)
+    predictions = concat([id_covid_missing, df_predictions, sample_prob_qtiles], axis=1)
+    results = {'prevalence': prevalence, 'predictions': predictions}
     app_instance.progress_bar.setValue(100)
     QApplication.processEvents()
     return results
